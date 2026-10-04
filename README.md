@@ -3,8 +3,11 @@
 **Big Data Essentials: Course Project, Group 8**
 MSc Big Data Analytics, Adventist University of Central Africa (AUCA). Lecturer: Dr. Kundan Kumar.
 
-Carlos HARERIMANA (101200), Kevin RUBERWA (101190), Ernest NDACYAYISENGA (101198),
-Felicien GAKUBA (101285), Florent Isheja MUNYAKAZI (101485)
+Carlos HARERIMANA (101200)
+Kevin RUBERWA (101190)
+Ernest NDACYAYISENGA (101198)
+Felicien GAKUBA (101285)
+Florent Isheja MUNYAKAZI (101485)
 
 An end-to-end real-time card fraud detection pipeline:
 
