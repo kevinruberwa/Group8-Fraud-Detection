@@ -1,0 +1,126 @@
+# Big Data Essentials -- Group 8 -- Real-time card fraud detection
+# Pipeline: HDFS -> Kafka -> Spark Structured Streaming + MLlib -> MySQL -> Django
+#
+# Start everything:   docker-compose up -d --build
+# Stop everything:    docker-compose stop        (NEVER use "down -v": it deletes all data)
+
+services:
+  # ---------- HDFS (Hadoop) ----------
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    restart: always
+    ports:
+      - "9870:9870"   # HDFS Web UI + WebHDFS (used by the Kafka producer)
+      - "9000:9000"   # HDFS RPC
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    environment:
+      - CLUSTER_NAME=bde_fraud_cluster
+    env_file:
+      - ./hadoop.env
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    restart: always
+    depends_on:
+      - namenode
+    ports:
+      - "9864:9864"   # DataNode HTTP (WebHDFS file reads)
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+    env_file:
+      - ./hadoop.env
+
+  # ---------- Kafka ----------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    restart: always
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:                          # NEW: keep ZooKeeper state across resets
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: always
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"    # internal listener (used by Spark inside Docker)
+      - "29092:29092"  # host listener (used by the producer on Windows)
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:                          # NEW: keep topics/messages across resets
+      - kafka_data:/var/lib/kafka/data
+
+  # ---------- Spark (custom image = official Apache Spark 3.5.3 + numpy + pandas) ----------
+  spark-master:
+    build: ./spark                    # NEW: see spark/Dockerfile
+    image: bde-spark:3.5.3
+    container_name: spark-master
+    restart: always
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+      --host spark-master --port 7077 --webui-port 8080
+    ports:
+      - "8080:8080"   # Spark master UI
+      - "7077:7077"   # Spark master port
+    volumes:                          # NEW: project folders shared with Windows (no more docker cp)
+      - ./consumer:/tmp/consumer
+      - ./models:/tmp/models
+      - ./jars:/tmp/jars
+
+  spark-worker:
+    image: bde-spark:3.5.3
+    container_name: spark-worker
+    restart: always
+    depends_on:
+      - spark-master
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077 --webui-port 8081
+    environment:
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=2
+    ports:
+      - "8081:8081"   # Spark worker UI
+    volumes:
+      - ./jars:/tmp/jars
+
+  # ---------- MySQL ----------
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: always
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: bde_root_pw
+      MYSQL_DATABASE: fraud_db
+      MYSQL_USER: bde_user
+      MYSQL_PASSWORD: bde_pw
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+  mysql_data:
+  zookeeper_data:
+  zookeeper_log:
+  kafka_data:

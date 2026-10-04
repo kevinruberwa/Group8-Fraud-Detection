@@ -1,0 +1,4 @@
+data/transactions.csv
+jars/*.jar
+__pycache__/
+*.pyc
